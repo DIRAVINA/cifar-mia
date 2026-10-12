@@ -82,3 +82,24 @@ def predict_membership(attack_models, probs, labels, device):
         x = torch.from_numpy(probs[mask].astype(np.float32)).to(device)
         preds[mask] = model(x).argmax(dim=1).cpu().numpy()
     return preds
+
+
+
+
+@torch.no_grad()
+def predict_membership_proba(attack_models, probs, labels, device):
+    """
+    Same idea as predict_membership(), but returns the attack's SCORE:
+    the probability (0 to 1) that each record was in the training set.
+    Needed for ROC curves and histograms.
+    """
+    scores = np.zeros(len(probs), dtype=np.float32)
+    for c, model in attack_models.items():
+        mask = labels == c
+        if mask.sum() == 0:
+            continue
+        model.to(device)
+        model.eval()
+        x = torch.from_numpy(probs[mask].astype(np.float32)).to(device)
+        scores[mask] = torch.softmax(model(x), dim=1)[:, 1].cpu().numpy()
+    return scores
