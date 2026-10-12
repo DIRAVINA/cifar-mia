@@ -34,7 +34,8 @@ def train_shadow_models(X_pool, y_pool, num_classes,
                         num_shadow=config.NUM_SHADOW,
                         train_size=config.SHADOW_TRAIN_SIZE,
                         epochs=config.SHADOW_EPOCHS,
-                        device=None, seed=config.SEED, weight_decay=0.0):
+                        device=None, seed=config.SEED, weight_decay=0.0,
+                        dropout=0.0):                                  # NEW
     """
     Trains `num_shadow` shadow models. For each shadow i:
       1. randomly pick `train_size` images from the pool as its training set
@@ -46,6 +47,8 @@ def train_shadow_models(X_pool, y_pool, num_classes,
     but the pool never contains target-model data.
 
     weight_decay is the L2 regularization strength (0.0 = none).
+    dropout is the dropout probability (0.0 = none). The attacker is assumed
+    to know the defense, so shadows are trained with the same settings.
 
     Returns the combined attack training data from all shadows.
     """
@@ -62,7 +65,7 @@ def train_shadow_models(X_pool, y_pool, num_classes,
         X_te, y_te = X_pool[te_idx], y_pool[te_idx]
 
         torch.manual_seed(seed + i)          # different init for each shadow
-        model = CifarCNN(num_classes)
+        model = CifarCNN(num_classes, dropout=dropout)                 # NEW
         train_model(model, X_tr, y_tr, epochs=epochs, device=device,
                     weight_decay=weight_decay, verbose=False)
 

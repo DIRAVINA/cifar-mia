@@ -30,4 +30,15 @@ RESULTS_DIR = "./results"
 # --- Experiments (run_experiments.py) ---
 NUM_SHADOW_SWEEP = 3                          # fewer shadows for the slow sweeps
 SWEEP_SIZES = [2500, 5000, 10000, 15000]      # same sizes as the paper (CIFAR-10)
-L2_LAMBDAS = [0.0, 1e-4, 1e-3]                # 0.0 = no regularization (baseline)
+#L2_LAMBDAS = [0.0, 1e-4, 1e-3]       # 0.0 = no regularization (baseline)
+L2_LAMBDAS = [0.0, 1e-4, 1e-3, 3e-3, 1e-2]         
+
+
+
+# --- Dropout experiments (run_defense_experiments.py) ---
+# (name shown in the dashboard, dropout probability, L2 strength)
+DROPOUT_SETTINGS = [
+    ("Dropout 0.2", 0.2, 0.0),
+    ("Dropout 0.5", 0.5, 0.0),
+    ("Dropout 0.5 + L2 1e-3", 0.5, 1e-3),
+]

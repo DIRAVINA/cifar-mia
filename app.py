@@ -205,8 +205,10 @@ elif section == "Why the attack works":
                       yaxis_title="True-positive rate",
                       xaxis_type="log" if log_x else "linear")
     show(style(fig, 420))
-    st.caption("The shadow attack beats the simple baseline, but only modestly. "
-               "At very low false-positive rates the attack finds few members.")
+   
+    st.caption("The two curves have similar AUC, but the shadow attack is clearly stronger "
+               "in the low false-positive region (left of the curve). Even so, at a "
+               "0.1% false-positive rate it still finds very few members.")
 
     # ---- gap vs precision
     st.subheader("3. More overfitting means a stronger attack")
@@ -313,6 +315,23 @@ elif section == "Defenses":
             show_table(df2[["lambda", "train_acc", "test_acc", "gap",
                             "precision", "recall"]].round(3))
 
+    if "dropout" in results:
+        st.subheader("Dropout (and dropout + L2) during training")
+        dd2 = pd.DataFrame(results["dropout"])
+        c1, c2 = st.columns([1.2, 1])
+        with c1:
+            fig = go.Figure()
+            fig.add_bar(x=dd2["name"], y=dd2["precision"], name="Attack precision",
+                        marker_color=RED)
+            fig.add_bar(x=dd2["name"], y=dd2["test_acc"], name="Target test accuracy",
+                        marker_color=GREEN)
+            baseline_line(fig)
+            fig.update_layout(barmode="group", yaxis=dict(range=[0.4, 1.0]))
+            show(style(fig))
+        with c2:
+            show_table(dd2[["name", "train_acc", "test_acc", "gap",
+                            "precision", "recall"]].round(3))
+
     # privacy vs utility
     rows = []
     for r in results.get("mitigation", []):
@@ -321,11 +340,15 @@ elif section == "Defenses":
     for r in results.get("l2", []):
         rows.append({"defense": f"L2 lambda={r['lambda']}", "kind": "L2 regularization",
                      "test_acc": r["test_acc"], "precision": r["precision"]})
+
+    for r in results.get("dropout", []):
+        rows.append({"defense": r["name"], "kind": "Dropout",
+                     "test_acc": r["test_acc"], "precision": r["precision"]})
     if rows:
         st.subheader("Privacy vs utility")
         dd = pd.DataFrame(rows)
         fig = go.Figure()
-        for kind, color in [("Output defense", BLUE), ("L2 regularization", RED)]:
+        for kind, color in [("Output defense", BLUE), ("L2 regularization", RED), ("Dropout", GREEN)]:
             part = dd[dd["kind"] == kind]
             fig.add_trace(go.Scatter(
                 x=part["test_acc"], y=part["precision"], mode="markers", name=kind,

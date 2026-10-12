@@ -9,12 +9,15 @@ class CifarCNN(nn.Module):
       2 x (convolution -> Tanh -> max pooling), then a fully connected
       layer of size 128, then a softmax output layer.
 
+    dropout: probability of randomly switching off neurons in the size-128
+    layer while training (a regularization defense). 0.0 = no dropout, which
+    keeps the model exactly as before.
+
     Note: this model outputs raw scores ("logits"). The softmax that turns
-    them into probabilities is applied later in predict_proba(), because
-    PyTorch's loss function expects logits during training.
+    them into probabilities is applied later in predict_proba().
     """
 
-    def __init__(self, num_classes=10):
+    def __init__(self, num_classes=10, dropout=0.0):
         super().__init__()
         self.features = nn.Sequential(
             nn.Conv2d(3, 32, kernel_size=5),   # 32x32 -> 28x28
@@ -24,12 +27,15 @@ class CifarCNN(nn.Module):
             nn.Tanh(),
             nn.MaxPool2d(2),                   # 10x10 -> 5x5
         )
-        self.classifier = nn.Sequential(
+        layers = [
             nn.Flatten(),                      # 64 * 5 * 5 = 1600 numbers
             nn.Linear(64 * 5 * 5, 128),
             nn.Tanh(),
-            nn.Linear(128, num_classes),       # logits, one per class
-        )
+        ]
+        if dropout > 0:                        # only added when asked for
+            layers.append(nn.Dropout(dropout))
+        layers.append(nn.Linear(128, num_classes))   # logits, one per class
+        self.classifier = nn.Sequential(*layers)
 
     def forward(self, x):
         return self.classifier(self.features(x))
