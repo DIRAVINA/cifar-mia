@@ -42,3 +42,12 @@ DROPOUT_SETTINGS = [
     ("Dropout 0.5", 0.5, 0.0),
     ("Dropout 0.5 + L2 1e-3", 0.5, 1e-3),
 ]
+
+
+# --- DP-SGD (run_dp_experiments.py) ---
+DP_EPSILONS = [1.0, 5.0, 10.0, 50.0]   # privacy budgets to test (smaller = more private)
+DP_DELTA = 1e-5                        # standard choice, must be below 1/(training set size)
+DP_MAX_GRAD_NORM = 1.0                 # per-example gradient clipping threshold
+DP_LEARNING_RATE = 0.001
+DP_BATCH_SIZE = 128
+DP_EPOCHS = 20

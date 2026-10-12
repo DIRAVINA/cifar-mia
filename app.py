@@ -332,6 +332,30 @@ elif section == "Defenses":
             show_table(dd2[["name", "train_acc", "test_acc", "gap",
                             "precision", "recall"]].round(3))
 
+    if "dp_sgd" in results:
+        st.subheader("Differential privacy (DP-SGD)  ·  extension beyond the paper")
+        dp = pd.DataFrame(results["dp_sgd"]).sort_values("epsilon")
+        dp["eps"] = dp["epsilon"].astype(str)
+        c1, c2 = st.columns([1.2, 1])
+        with c1:
+            fig = go.Figure()
+            fig.add_bar(x=dp["eps"], y=dp["precision"], name="Attack precision",
+                        marker_color=RED)
+            fig.add_bar(x=dp["eps"], y=dp["test_acc"], name="Target test accuracy",
+                        marker_color=GREEN)
+            baseline_line(fig)
+            fig.update_layout(barmode="group",
+                              xaxis_title="Privacy budget epsilon (smaller = more private)",
+                              yaxis=dict(range=[0.0, 1.0]))
+            show(style(fig))
+        with c2:
+            show_table(dp[["epsilon", "train_acc", "test_acc", "gap",
+                           "precision", "recall"]].round(3))
+        st.caption("DP-SGD is the only defense here with a formal guarantee. A smaller "
+                   "epsilon means stronger privacy, but the model also becomes less "
+                   "accurate. Opacus was used; the paper itself only discusses "
+                   "differential privacy (Section VIII) without training such a model.")
+
     # privacy vs utility
     rows = []
     for r in results.get("mitigation", []):
@@ -344,11 +368,15 @@ elif section == "Defenses":
     for r in results.get("dropout", []):
         rows.append({"defense": r["name"], "kind": "Dropout",
                      "test_acc": r["test_acc"], "precision": r["precision"]})
+    for r in results.get("dp_sgd", []):
+        rows.append({"defense": r["name"], "kind": "DP-SGD",
+                     "test_acc": r["test_acc"], "precision": r["precision"]})
+        
     if rows:
         st.subheader("Privacy vs utility")
         dd = pd.DataFrame(rows)
         fig = go.Figure()
-        for kind, color in [("Output defense", BLUE), ("L2 regularization", RED), ("Dropout", GREEN)]:
+        for kind, color in [("Output defense", BLUE), ("L2 regularization", RED), ("Dropout", GREEN), ("DP-SGD", "#b279a2")]:
             part = dd[dd["kind"] == kind]
             fig.add_trace(go.Scatter(
                 x=part["test_acc"], y=part["precision"], mode="markers", name=kind,
@@ -356,7 +384,9 @@ elif section == "Defenses":
                 text=part["defense"],
                 hovertemplate="%{text}<br>test acc %{x:.3f}<br>attack precision %{y:.3f}"
                               "<extra></extra>"))
-        fig.update_layout(xaxis_title="Target test accuracy (higher = more useful model)",
+        
+        fig.update_layout(xaxis_range=[0.1, 0.65], yaxis_range=[0.45, 0.85],
+                          xaxis_title="Target test accuracy (higher = more useful model)",
                           yaxis_title="Attack precision (lower = more private)")
         show(style(fig, 420))
         st.caption("The ideal defense sits at the bottom right: accurate model, weak "
