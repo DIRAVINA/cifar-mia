@@ -1,0 +1,15 @@
+{
+  "key": "dp",
+  "label": "DP-SGD (epsilon = 10)",
+  "dropout": 0.0,
+  "transform": "none",
+  "target_dir": "dp",
+  "num_classes": 10,
+  "dataset": "cifar10",
+  "train_acc": 0.4302,
+  "test_acc": 0.4176,
+  "attack_precision": 0.5121429959199534,
+  "attack_recall": 0.5272,
+  "attack_accuracy": 0.5125,
+  "epsilon": 10.0
+}

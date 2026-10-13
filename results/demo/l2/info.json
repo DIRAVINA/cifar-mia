@@ -1,0 +1,14 @@
+{
+  "key": "l2",
+  "label": "L2 regularization 1e-2",
+  "dropout": 0.0,
+  "transform": "none",
+  "target_dir": "l2",
+  "num_classes": 10,
+  "dataset": "cifar10",
+  "train_acc": 0.8868,
+  "test_acc": 0.551,
+  "attack_precision": 0.6342297528369345,
+  "attack_recall": 0.816,
+  "attack_accuracy": 0.6727
+}

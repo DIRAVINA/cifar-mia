@@ -51,3 +51,16 @@ DP_MAX_GRAD_NORM = 1.0                 # per-example gradient clipping threshold
 DP_LEARNING_RATE = 0.001
 DP_BATCH_SIZE = 128
 DP_EPOCHS = 20
+
+
+
+# --- Live demo defenses (build_demo.py and pages/1_Live_Demo.py) ---
+# key: (label shown in the page, dropout, L2 strength, output transform)
+DEMO_DEFENSES = {
+    "none":       ("None (unprotected)",     0.0, 0.0,  "none"),
+    "label_only": ("Label-only output",      0.0, 0.0,  "label_only"),
+    "l2":         ("L2 regularization 1e-2", 0.0, 1e-2, "none"),
+    "dropout":    ("Dropout 0.5",            0.5, 0.0,  "none"),
+    "dp":         ("DP-SGD (epsilon = 10)",  0.0, 0.0,  "none"),
+}
+DEMO_DP_EPSILON = 10.0

@@ -86,7 +86,7 @@ streamlit run app.py
 | 3 | `python run_analysis.py` | ROC / AUC, histograms, shadow-count sweep, gap vs precision | 15-30 min |
 | 4 | `python run_defense_experiments.py` | Dropout, dropout + L2 | ~30 min |
 | 5 | `python run_dp_experiments.py` | DP-SGD at epsilon 1, 5, 10, 50 | 1-1.5 h |
-| 6 | `python build_demo.py` | Saves models for the live demo | 3-6 min |
+| 6 | `python build_demo.py` | Builds target and attack models for each demo defense (none, label-only, L2, dropout, DP-SGD) | ~1 h |
 | 7 | `streamlit run app.py` | Dashboard + Live Demo page | - |
 
 Quick checks: `python -m src.data`, `python -m src.model`, `python -m src.train`, `python -m src.dp`.
@@ -98,7 +98,7 @@ Quick checks: `python -m src.data`, `python -m src.model`, `python -m src.train`
 - **Attack strength**: training-set size, number of shadow models
 - **Defenses**: output defenses, L2, dropout, DP-SGD, and a privacy-vs-utility chart
 - **Per-class results**: heatmap and drill-down
-- **Live Demo** page: random images are picked automatically; the attacker gives a member / non-member verdict for each, the answers can be revealed afterwards, and a batch test shows the histogram of member vs non-member scores
+- **Live Demo** page: random images are picked automatically; the attacker gives a member / non-member verdict for each. A **Defense** dropdown (none, label-only, L2, dropout, DP-SGD) re-scores the same images, so you can watch the attack drop toward a coin flip under DP-SGD. Answers can be revealed, and a batch test shows the member vs non-member score histogram
 
 ## Results
 

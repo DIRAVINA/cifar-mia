@@ -1,0 +1,14 @@
+{
+  "key": "label_only",
+  "label": "Label-only output",
+  "dropout": 0.0,
+  "transform": "label_only",
+  "target_dir": "none",
+  "num_classes": 10,
+  "dataset": "cifar10",
+  "train_acc": 1.0,
+  "test_acc": 0.5596,
+  "attack_precision": 0.6411900487304437,
+  "attack_recall": 1.0,
+  "attack_accuracy": 0.7202
+}
