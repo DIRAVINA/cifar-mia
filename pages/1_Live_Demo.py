@@ -203,7 +203,7 @@ with c2:
                "bar": {"color": RED if verdict_member[which] else BLUE},
                "threshold": {"line": {"color": "black", "width": 3},
                              "thickness": 0.8, "value": 50}}))
-    gauge.update_layout(height=300, margin=dict(l=20, r=20, t=60, b=10))
+    gauge.update_layout(height=300, margin=dict(l=40, r=50, t=60, b=10))
     show(gauge)
 
 # ------------------------------------------------------------------ batch test
