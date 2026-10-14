@@ -1,4 +1,6 @@
 # src/data.py
+import random
+
 import numpy as np
 import torch
 from torchvision import datasets
@@ -12,9 +14,13 @@ def get_device():
 
 
 def set_seed(seed=config.SEED):
-    """Makes results repeatable."""
+    """Makes results repeatable (Python, NumPy, PyTorch CPU and GPU)."""
+    random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 def load_cifar(name=config.DATASET, data_dir=config.DATA_DIR):
@@ -39,16 +45,19 @@ def load_cifar(name=config.DATASET, data_dir=config.DATA_DIR):
     X = np.concatenate([train_ds.data, test_ds.data], axis=0)       # (N, 32, 32, 3) uint8
     y = np.concatenate([np.array(train_ds.targets), np.array(test_ds.targets)])
 
-    # Scale pixels to [0, 1], then move channels first: (N, 3, 32, 32)
-    X = X.astype(np.float32) / 255.0
+    # Scale pixels to [0, 1], then move channels first: (N, 3, 32, 32).
+    # Done in place so only one float copy (~700 MB) is ever in memory.
+    X = X.astype(np.float32)
+    X /= 255.0
     X = np.transpose(X, (0, 3, 1, 2))
 
     # Standardize each color channel (mean 0, std 1)
     mean = X.mean(axis=(0, 2, 3), keepdims=True)
     std = X.std(axis=(0, 2, 3), keepdims=True)
-    X = (X - mean) / std
+    X -= mean
+    X /= std
 
-    return X.astype(np.float32), y.astype(np.int64)
+    return np.ascontiguousarray(X), y.astype(np.int64)
 
 
 def split_target_and_shadow_pool(X, y, target_train_size=config.TARGET_TRAIN_SIZE,

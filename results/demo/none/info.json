@@ -2,13 +2,14 @@
   "key": "none",
   "label": "None (unprotected)",
   "dropout": 0.0,
+  "l2": 0.0,
   "transform": "none",
   "target_dir": "none",
   "num_classes": 10,
   "dataset": "cifar10",
   "train_acc": 1.0,
-  "test_acc": 0.5596,
-  "attack_precision": 0.7952101661779081,
-  "attack_recall": 0.9762,
-  "attack_accuracy": 0.8624
+  "test_acc": 0.5654,
+  "attack_precision": 0.7899470049783203,
+  "attack_recall": 0.9838,
+  "attack_accuracy": 0.8611
 }

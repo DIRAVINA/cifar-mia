@@ -8,7 +8,8 @@ import argparse
 import io
 import json
 import os
-from contextlib import redirect_stdout
+import time
+from contextlib import contextmanager, redirect_stdout
 
 import numpy as np
 import torch
@@ -17,8 +18,7 @@ import config
 from src.data import get_device, set_seed, load_cifar, split_target_and_shadow_pool
 from src.model import CifarCNN
 from src.train import train_model
-from src.shadow import (build_attack_data, train_shadow_models,
-                        save_attack_data, load_attack_data)
+from src.shadow import build_attack_data, train_shadow_models, load_or_train_shadow_data
 from src.attack import train_attack_models
 from src.evaluate import evaluate_attack
 from src.mitigations import MITIGATIONS
@@ -34,18 +34,50 @@ def load_results():
     return {}
 
 
-def save_results(results):
+@contextmanager
+def _results_lock():
+    """Simple lock file, so scripts running at the same time take turns."""
     os.makedirs(config.RESULTS_DIR, exist_ok=True)
-    with open(RESULTS_FILE, "w") as f:
-        json.dump(results, f, indent=2)
+    lock = RESULTS_FILE + ".lock"
+    while True:
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL)
+            break
+        except FileExistsError:
+            time.sleep(0.2)
+    try:
+        yield
+    finally:
+        os.close(fd)
+        os.remove(lock)
 
 
-def train_target(s, num_classes, device, weight_decay=0.0):
-    torch.manual_seed(config.SEED + 999)
+def update_result(key, fn):
+    """
+    Replaces results[key] with fn(old value or None) in results.json. The file
+    is re-read under a lock right before writing, so scripts running at the
+    same time do not overwrite each other's results.
+    """
+    with _results_lock():
+        results = load_results()
+        results[key] = fn(results.get(key))
+        tmp = RESULTS_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(results, f, indent=2)
+        os.replace(tmp, RESULTS_FILE)
+
+
+def save_result(key, value):
+    """Stores one experiment under `key` in results.json."""
+    update_result(key, lambda old: value)
+
+
+def train_target(s, num_classes, device, l2=0.0, seed=config.SEED):
+    torch.manual_seed(seed + config.TARGET_SEED_OFFSET)
     model = CifarCNN(num_classes)
     train_model(model, s["X_target_train"], s["y_target_train"],
                 epochs=config.TARGET_EPOCHS, device=device,
-                weight_decay=weight_decay, verbose=False)
+                l2=l2, verbose=False)
     return model
 
 
@@ -74,7 +106,9 @@ def summarize(res, train_acc, test_acc):
     return {"train_acc": train_acc, "test_acc": test_acc,
             "gap": train_acc - test_acc,
             "precision": res["precision"], "recall": res["recall"],
-            "accuracy": res["accuracy"], "per_class": res["per_class"]}
+            "accuracy": res["accuracy"],
+            "median_class_precision": res["median_class_precision"],
+            "per_class": res["per_class"]}
 
 
 def show(name, e):
@@ -102,14 +136,7 @@ def exp_sweep(X, y, num_classes, device):
 
 
 def get_shadow_data_5000(s, num_classes, device):
-    cache = os.path.join(config.RESULTS_DIR, "shadow_attack_data.npz")
-    if os.path.exists(cache):
-        print("Loading cached shadow data from", cache)
-        return load_attack_data(cache)
-    data = train_shadow_models(s["X_shadow_pool"], s["y_shadow_pool"],
-                               num_classes, device=device)
-    save_attack_data(data, cache)
-    return data
+    return load_or_train_shadow_data(s, num_classes, device)
 
 
 def exp_mitigation(X, y, num_classes, device):
@@ -138,12 +165,12 @@ def exp_l2(X, y, num_classes, device):
     out = []
     for lam in config.L2_LAMBDAS:
         print(f"\n##### L2 regularization: lambda = {lam} #####")
-        target = train_target(s, num_classes, device, weight_decay=lam)
+        target = train_target(s, num_classes, device, l2=lam)
         td = make_target_data(target, s, device)
         tr, te = split_acc(td)
         shadow = train_shadow_models(s["X_shadow_pool"], s["y_shadow_pool"],
                                      num_classes, num_shadow=config.NUM_SHADOW_SWEEP,
-                                     device=device, weight_decay=lam)
+                                     device=device, l2=lam)
         e = summarize(run_attack(shadow, td, num_classes, device), tr, te)
         e["lambda"] = lam
         show(f"lambda {lam}", e)
@@ -163,11 +190,8 @@ if __name__ == "__main__":
     print("Device:", device)
     X, y = load_cifar()
     num_classes = len(np.unique(y))
-    results = load_results()
-
     todo = {"sweep": exp_sweep, "mitigation": exp_mitigation, "l2": exp_l2}
     for key, fn in todo.items():
         if args.exp in (key, "all"):
-            results[key] = fn(X, y, num_classes, device)
-            save_results(results)               # saved after each experiment
+            save_result(key, fn(X, y, num_classes, device))   # saved after each experiment
             print(f"\nSaved '{key}' results to {RESULTS_FILE}")

@@ -11,8 +11,8 @@ import config
 from src.data import get_device, set_seed, load_cifar, split_target_and_shadow_pool
 from src.attack import train_attack_models, predict_membership_proba
 from src.evaluate import evaluate_attack
-from run_experiments import (train_target, make_target_data, load_results,
-                             save_results, get_shadow_data_5000)
+from run_experiments import (train_target, make_target_data, save_result,
+                             get_shadow_data_5000)
 
 
 def fit_attack(shadow_data, num_classes, device):
@@ -42,14 +42,22 @@ def histogram_data(td, bins=20):
     return out
 
 
+def tpr_at_fpr(fpr, tpr, max_fpr):
+    """
+    Highest true-positive rate the attack reaches while its false-positive
+    rate stays at or below max_fpr (the usual "TPR at x% FPR" metric).
+    """
+    return float(tpr[fpr <= max_fpr].max())
+
+
 def roc_summary(true, score, points=200):
     """ROC curve (downsampled), AUC, and true-positive rate at low false-positive rates."""
-    fpr, tpr, _ = roc_curve(true, score)
+    fpr, tpr, _ = roc_curve(true, score, drop_intermediate=False)
     idx = np.unique(np.linspace(0, len(fpr) - 1, points).astype(int))
     return {"fpr": fpr[idx].tolist(), "tpr": tpr[idx].tolist(),
             "auc": float(roc_auc_score(true, score)),
-            "tpr_at_1pct_fpr": float(np.interp(0.01, fpr, tpr)),
-            "tpr_at_0.1pct_fpr": float(np.interp(0.001, fpr, tpr))}
+            "tpr_at_1pct_fpr": tpr_at_fpr(fpr, tpr, 0.01),
+            "tpr_at_0.1pct_fpr": tpr_at_fpr(fpr, tpr, 0.001)}
 
 
 def shadow_count_sweep(shadow_data, td, num_classes, device):
@@ -71,6 +79,7 @@ def shadow_count_sweep(shadow_data, td, num_classes, device):
         score = predict_membership_proba(models, td["probs"], td["labels"], device)
         rows.append({"num_shadow": k, "precision": res["precision"],
                      "recall": res["recall"], "accuracy": res["accuracy"],
+                     "median_class_precision": res["median_class_precision"],
                      "auc": float(roc_auc_score(td["is_member"], score))})
         print(f"    precision {res['precision']:.3f} | recall {res['recall']:.3f} "
               f"| AUC {rows[-1]['auc']:.3f}")
@@ -132,14 +141,13 @@ if __name__ == "__main__":
                                          [r["precision"] for r in gap_rows])[0, 1]),
     }
 
-    results = load_results()
-    results["analysis"] = analysis
-    save_results(results)
+    save_result("analysis", analysis)
 
     a = analysis
     print("\n=== SUMMARY ===")
     print(f"Shadow attack AUC      : {a['roc']['shadow_attack']['auc']:.3f}")
     print(f"Confidence baseline AUC: {a['roc']['confidence_baseline']['auc']:.3f}")
     print(f"TPR at 1% FPR          : {a['roc']['shadow_attack']['tpr_at_1pct_fpr']:.3f}")
+    print(f"TPR at 0.1% FPR        : {a['roc']['shadow_attack']['tpr_at_0.1pct_fpr']:.3f}")
     print(f"Gap vs precision corr. : {a['gap_vs_precision']['correlation']:.3f}")
     print("Saved to results/results.json under 'analysis'")
