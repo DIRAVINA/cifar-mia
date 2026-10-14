@@ -1,10 +1,11 @@
-torch
-torchvision
-numpy
-scikit-learn
-matplotlib
-pandas
-tqdm
-streamlit
-plotly
-opacus
+# Python 3.9+. Tested with Python 3.12 and the versions in docs/PROJECT_REPORT.md.
+# For an NVIDIA GPU, install torch/torchvision first from https://pytorch.org
+# (e.g. pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124)
+torch>=2.0
+torchvision>=0.15
+opacus>=1.4
+numpy>=1.24
+scikit-learn>=1.2
+pandas>=1.5
+streamlit>=1.37
+plotly>=5.0

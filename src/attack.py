@@ -2,9 +2,8 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
-
 import config
+from src.train import minibatches
 
 
 class AttackMLP(nn.Module):
@@ -31,22 +30,21 @@ def _train_one(model, probs, is_member, epochs, device,
     """Trains a single attack model on (prediction vector -> member or not)."""
     model.to(device)
     model.train()
-    ds = TensorDataset(torch.from_numpy(probs.astype(np.float32)),
-                       torch.from_numpy(is_member.astype(np.int64)))
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=True)
+    X_t = torch.from_numpy(probs.astype(np.float32)).to(device)
+    y_t = torch.from_numpy(is_member.astype(np.int64)).to(device)
     loss_fn = nn.CrossEntropyLoss()
     opt = torch.optim.Adam(model.parameters(), lr=lr)
 
     for _ in range(epochs):
-        for xb, yb in loader:
-            xb, yb = xb.to(device), yb.to(device)
+        for xb, yb in minibatches(X_t, y_t, batch_size):
             opt.zero_grad()
             loss_fn(model(xb), yb).backward()
             opt.step()
     return model
 
 
-def train_attack_models(data, num_classes, device, epochs=config.ATTACK_EPOCHS):
+def train_attack_models(data, num_classes, device, epochs=config.ATTACK_EPOCHS,
+                        seed=config.SEED):
     """
     Trains ONE attack model PER CLASS (the paper's design).
 
@@ -55,14 +53,28 @@ def train_attack_models(data, num_classes, device, epochs=config.ATTACK_EPOCHS):
 
     data: dict with 'probs', 'labels', 'is_member' (from shadow models)
     Returns: dict {class_id: trained AttackMLP}
+
+    Each class gets a fixed seed, so the attack models do not depend on what
+    else was run earlier in the same script.
+
+    The attack models are always trained on the CPU with one thread: for such
+    a tiny network, GPU launch overhead makes the GPU about 3x slower.
+    `device` is only kept so callers can stay unchanged.
     """
+    cpu = torch.device("cpu")
+    threads = torch.get_num_threads()
+    torch.set_num_threads(1)
     attack_models = {}
-    for c in range(num_classes):
-        mask = data["labels"] == c               # rows whose TRUE label is class c
-        model = AttackMLP(num_classes)
-        _train_one(model, data["probs"][mask], data["is_member"][mask], epochs, device)
-        attack_models[c] = model
-        print(f"  attack model for class {c}: trained on {int(mask.sum())} rows")
+    try:
+        for c in range(num_classes):
+            mask = data["labels"] == c               # rows whose TRUE label is class c
+            torch.manual_seed(seed + c)
+            model = AttackMLP(num_classes)
+            _train_one(model, data["probs"][mask], data["is_member"][mask], epochs, cpu)
+            attack_models[c] = model
+            print(f"  attack model for class {c}: trained on {int(mask.sum())} rows")
+    finally:
+        torch.set_num_threads(threads)
     return attack_models
 
 

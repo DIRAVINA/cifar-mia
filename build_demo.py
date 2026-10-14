@@ -16,7 +16,7 @@ import config
 from src.data import get_device, set_seed, load_cifar, split_target_and_shadow_pool
 from src.model import CifarCNN
 from src.train import train_model
-from src.shadow import train_shadow_models, load_attack_data
+from src.shadow import train_shadow_models, load_or_train_shadow_data
 from src.attack import train_attack_models
 from src.evaluate import evaluate_attack
 from src.mitigations import top1_label_only
@@ -25,7 +25,6 @@ from run_experiments import make_target_data, split_acc
 from run_dp_experiments import train_shadow_models_dp
 
 DEMO_DIR = os.path.join(config.RESULTS_DIR, "demo")
-SHADOW_CACHE = os.path.join(config.RESULTS_DIR, "shadow_attack_data.npz")
 
 
 def transform_probs(kind, probs):
@@ -64,18 +63,18 @@ def build_one(key, s, num_classes, device):
         print("Training the DP-SGD target model...")
         target, _ = train_model_dp(s["X_target_train"], s["y_target_train"],
                                    num_classes, config.DEMO_DP_EPSILON, device,
-                                   seed=config.SEED + 999)
+                                   seed=config.SEED + config.TARGET_SEED_OFFSET)
     else:
         print("Training the target model...")
-        torch.manual_seed(config.SEED + 999)
+        torch.manual_seed(config.SEED + config.TARGET_SEED_OFFSET)
         target = CifarCNN(num_classes, dropout=dropout)
         train_model(target, s["X_target_train"], s["y_target_train"],
                     epochs=config.TARGET_EPOCHS, device=device,
-                    weight_decay=l2, verbose=False)
+                    l2=l2, verbose=False)
 
     # 2) shadow data (the attacker knows the defense, so shadows get it too)
     if key in ("none", "label_only"):
-        shadow = dict(load_attack_data(SHADOW_CACHE))
+        shadow = dict(load_or_train_shadow_data(s, num_classes, device))
     elif key == "dp":
         shadow = train_shadow_models_dp(s["X_shadow_pool"], s["y_shadow_pool"],
                                         num_classes, config.DEMO_DP_EPSILON, device,
@@ -83,7 +82,7 @@ def build_one(key, s, num_classes, device):
     else:
         shadow = train_shadow_models(s["X_shadow_pool"], s["y_shadow_pool"], num_classes,
                                      num_shadow=config.NUM_SHADOW_SWEEP, device=device,
-                                     weight_decay=l2, dropout=dropout)
+                                     l2=l2, dropout=dropout)
     shadow["probs"] = transform_probs(kind, shadow["probs"])
 
     # 3) attack models + overall evaluation on the target
@@ -101,7 +100,7 @@ def build_one(key, s, num_classes, device):
         torch.save(cpu_state(target), os.path.join(out_dir, "target.pt"))
     torch.save({c: cpu_state(m) for c, m in attack_models.items()},
                os.path.join(out_dir, "attack_models.pt"))
-    info = {"key": key, "label": label, "dropout": dropout, "transform": kind,
+    info = {"key": key, "label": label, "dropout": dropout, "l2": l2, "transform": kind,
             "target_dir": "none" if key == "label_only" else key,
             "num_classes": num_classes, "dataset": config.DATASET,
             "train_acc": train_acc, "test_acc": test_acc,
@@ -118,9 +117,6 @@ if __name__ == "__main__":
     parser.add_argument("--only", choices=list(config.DEMO_DEFENSES.keys()))
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-
-    if not os.path.exists(SHADOW_CACHE):
-        raise SystemExit("Shadow data not found. Run first:  python -m src.evaluate")
 
     set_seed()
     device = get_device()

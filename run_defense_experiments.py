@@ -11,16 +11,16 @@ from src.model import CifarCNN
 from src.train import train_model
 from src.shadow import train_shadow_models
 from run_experiments import (make_target_data, split_acc, run_attack,
-                             summarize, show, load_results, save_results)
+                             summarize, show, save_result)
 
 
-def train_target_reg(s, num_classes, device, dropout=0.0, weight_decay=0.0):
+def train_target_reg(s, num_classes, device, dropout=0.0, l2=0.0):
     """Trains the target with dropout and/or L2 regularization."""
-    torch.manual_seed(config.SEED + 999)
+    torch.manual_seed(config.SEED + config.TARGET_SEED_OFFSET)
     model = CifarCNN(num_classes, dropout=dropout)
     train_model(model, s["X_target_train"], s["y_target_train"],
                 epochs=config.TARGET_EPOCHS, device=device,
-                weight_decay=weight_decay, verbose=False)
+                l2=l2, verbose=False)
     return model
 
 
@@ -29,14 +29,14 @@ def exp_dropout(X, y, num_classes, device):
     out = []
     for name, p, lam in config.DROPOUT_SETTINGS:
         print(f"\n##### {name} #####")
-        target = train_target_reg(s, num_classes, device, dropout=p, weight_decay=lam)
+        target = train_target_reg(s, num_classes, device, dropout=p, l2=lam)
         td = make_target_data(target, s, device)
         tr, te = split_acc(td)
 
         # The attacker knows the defense: shadows are trained the same way.
         shadow = train_shadow_models(s["X_shadow_pool"], s["y_shadow_pool"],
                                      num_classes, num_shadow=config.NUM_SHADOW_SWEEP,
-                                     device=device, weight_decay=lam, dropout=p)
+                                     device=device, l2=lam, dropout=p)
         e = summarize(run_attack(shadow, td, num_classes, device), tr, te)
         e.update({"name": name, "dropout": p, "lambda": lam})
         show(name, e)
@@ -51,7 +51,5 @@ if __name__ == "__main__":
     X, y = load_cifar()
     num_classes = len(np.unique(y))
 
-    results = load_results()
-    results["dropout"] = exp_dropout(X, y, num_classes, device)
-    save_results(results)
+    save_result("dropout", exp_dropout(X, y, num_classes, device))
     print("\nSaved 'dropout' results to results/results.json")

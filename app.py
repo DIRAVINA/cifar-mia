@@ -27,8 +27,12 @@ with open(RESULTS_FILE) as f:
     results = json.load(f)
 
 analysis = results.get("analysis")
+repeats = results.get("repeats")
 base = next((r for r in results.get("mitigation", [])
              if r["name"] == "No mitigation"), None)
+
+# Median per-class precision the paper reports for CIFAR-10 (Fig. 4)
+PAPER_FIG4 = {2500: 0.78, 5000: 0.74, 10000: 0.72, 15000: 0.71}
 
 
 # ---------------------------------------------------------------- helpers
@@ -62,6 +66,12 @@ def kpi(col, label, value, help_text=None):
     with col:
         with st.container(border=True):
             st.metric(label, value, help=help_text)
+
+
+def padded_range(values, lo=0.0, hi=1.0, pad=0.05):
+    """Axis range that always contains every value, with a little margin."""
+    values = list(values)
+    return [max(lo, min(values) - pad), min(hi, max(values) + pad)]
 
 
 def baseline_line(fig, y=0.5):
@@ -114,6 +124,23 @@ if section == "Overview":
         if analysis:
             kpi(cols[5], "Attack AUC", f"{analysis['roc']['shadow_attack']['auc']:.3f}",
                 "1.0 = perfect, 0.5 = random guessing.")
+        st.caption("Main run, seed 42, 10 shadow models. Target: 5,000 training images; "
+                   "evaluated on 5,000 members + 5,000 non-members.")
+
+    if repeats:
+        st.subheader(f"How stable are these numbers? ({len(repeats['seeds'])} seeds)")
+        b = repeats["summary"]["No mitigation"]
+        labels = {"test_acc": "Target test accuracy", "gap": "Train-test gap",
+                  "precision": "Attack precision", "recall": "Attack recall",
+                  "accuracy": "Attack accuracy", "auc": "Attack AUC",
+                  "baseline_auc": "Confidence-baseline AUC",
+                  "tpr_at_1pct_fpr": "TPR at 1% FPR"}
+        show_table(pd.DataFrame([{"Metric": labels[k], "Mean": round(b[k]["mean"], 3),
+                                  "Std": round(b[k]["std"], 3)}
+                                 for k in labels if k in b]))
+        st.caption("Each seed uses a new data split, target model, shadow models and "
+                   "attack models. Differences smaller than about two standard "
+                   "deviations should be treated as noise.")
 
     st.subheader("How the attack works")
     st.graphviz_chart(r"""
@@ -245,11 +272,22 @@ elif section == "Attack strength":
                                      mode="lines+markers", line=dict(color=RED, width=3)))
             fig.add_trace(go.Scatter(x=df["train_size"], y=df["recall"], name="Recall",
                                      mode="lines+markers", line=dict(color=BLUE, width=3)))
+            if "median_class_precision" in df:
+                fig.add_trace(go.Scatter(x=df["train_size"], y=df["median_class_precision"],
+                                         name="Median class precision",
+                                         mode="lines+markers",
+                                         line=dict(color=RED, width=2, dash="dot")))
+            fig.add_trace(go.Scatter(x=list(PAPER_FIG4), y=list(PAPER_FIG4.values()),
+                                     name="Paper (Fig. 4, median)", mode="markers",
+                                     marker=dict(color="black", symbol="x", size=10)))
             baseline_line(fig)
             fig.update_layout(title="Attack precision and recall",
                               xaxis_title="Target training-set size",
                               yaxis=dict(range=[0.45, 1.02]))
-            show(style(fig))
+            fig = style(fig, 420)
+            fig.update_layout(legend=dict(orientation="h", y=-0.22, x=0),
+                              margin=dict(b=40))              # 4 entries: below the chart
+            show(fig)
         with c2:
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=df["train_size"], y=df["train_acc"], name="Train accuracy",
@@ -258,10 +296,11 @@ elif section == "Attack strength":
                                      mode="lines+markers", line=dict(color=GREY, width=3)))
             fig.update_layout(title="Target model accuracy",
                               xaxis_title="Target training-set size",
-                              yaxis=dict(range=[0.4, 1.02]))
-            show(style(fig))
+                              yaxis=dict(range=[padded_range(df["test_acc"])[0], 1.02]))
+            show(style(fig, 420))
         st.caption("Larger training sets overfit less (the gap shrinks), so the attack "
-                   "weakens. The paper shows the same trend.")
+                   "weakens. The paper shows the same trend. The sweep uses 3 shadow models "
+                   "per size; the paper used 100.")
 
     st.subheader("Number of shadow models")
     if not analysis:
@@ -274,7 +313,7 @@ elif section == "Attack strength":
             fig.add_trace(go.Scatter(x=df["num_shadow"], y=df[col], name=name,
                                      mode="lines+markers", line=dict(color=color, width=3)))
         fig.update_layout(xaxis_title="Number of shadow models",
-                          yaxis=dict(range=[0.7, 1.02]),
+                          yaxis=dict(range=[padded_range(df["precision"])[0], 1.02]),
                           xaxis=dict(tickmode="array", tickvals=df["num_shadow"].tolist()))
         show(style(fig))
         st.caption("More shadow models help, with diminishing returns after about 5.")
@@ -292,12 +331,25 @@ elif section == "Defenses":
         baseline_line(fig)
         fig.update_layout(barmode="group", yaxis=dict(range=[0.4, 1.05]))
         show(style(fig, 420))
+        if repeats:
+            rs = repeats["summary"]
+            show_table(pd.DataFrame([{"Defense": k,
+                                      "Precision (mean)": round(v["precision"]["mean"], 3),
+                                      "Precision (std)": round(v["precision"]["std"], 3),
+                                      "Recall (mean)": round(v["recall"]["mean"], 3),
+                                      "Recall (std)": round(v["recall"]["std"], 3)}
+                                     for k, v in rs.items()]))
+            st.caption(f"Mean and standard deviation over {len(repeats['seeds'])} seeds.")
         st.caption("Top-k, rounding and temperature barely help. Releasing only the label "
-                   "helps most, yet the attack still beats guessing because members and "
-                   "non-members are misclassified differently.")
+                   "helps most, yet the attack still beats guessing: it learns to call an "
+                   "image a member whenever the model labels it correctly. The model is "
+                   "right on all of its training images but only on about 56% of unseen "
+                   "ones, so precision = 1 / (1 + test accuracy) = about 0.64.")
 
     if "l2" in results:
         st.subheader("Regularization (L2) during training")
+        st.caption("lambda as defined in the paper: the training loss gets "
+                   "+ lambda * (sum of squared weights).")
         df2 = pd.DataFrame(results["l2"])
         df2["lambda"] = df2["lambda"].astype(str)
         c1, c2 = st.columns([1.2, 1])
@@ -309,7 +361,8 @@ elif section == "Defenses":
                         marker_color=GREEN)
             baseline_line(fig)
             fig.update_layout(barmode="group", xaxis_title="L2 strength (lambda)",
-                              yaxis=dict(range=[0.4, 1.0]))
+                              yaxis=dict(range=[padded_range(list(df2["test_acc"]) +
+                                                             list(df2["precision"]))[0], 1.0]))
             show(style(fig))
         with c2:
             show_table(df2[["lambda", "train_acc", "test_acc", "gap",
@@ -326,7 +379,9 @@ elif section == "Defenses":
             fig.add_bar(x=dd2["name"], y=dd2["test_acc"], name="Target test accuracy",
                         marker_color=GREEN)
             baseline_line(fig)
-            fig.update_layout(barmode="group", yaxis=dict(range=[0.4, 1.0]))
+            fig.update_layout(barmode="group",
+                              yaxis=dict(range=[padded_range(list(dd2["test_acc"]) +
+                                                             list(dd2["precision"]))[0], 1.0]))
             show(style(fig))
         with c2:
             show_table(dd2[["name", "train_acc", "test_acc", "gap",
@@ -385,7 +440,8 @@ elif section == "Defenses":
                 hovertemplate="%{text}<br>test acc %{x:.3f}<br>attack precision %{y:.3f}"
                               "<extra></extra>"))
         
-        fig.update_layout(xaxis_range=[0.1, 0.65], yaxis_range=[0.45, 0.85],
+        fig.update_layout(xaxis_range=padded_range(dd["test_acc"]),
+                          yaxis_range=padded_range(dd["precision"]),
                           xaxis_title="Target test accuracy (higher = more useful model)",
                           yaxis_title="Attack precision (lower = more private)")
         show(style(fig, 420))
@@ -403,6 +459,10 @@ elif section == "Per-class results":
         options[f"Train size {r['train_size']}"] = r["per_class"]
     for r in results.get("l2", []):
         options[f"L2 lambda={r['lambda']}"] = r["per_class"]
+    for r in results.get("dropout", []):
+        options[r["name"]] = r["per_class"]
+    for r in results.get("dp_sgd", []):
+        options[r["name"]] = r["per_class"]
 
     if not options:
         st.warning("No results yet.")
@@ -413,12 +473,13 @@ elif section == "Per-class results":
     z = [[row["precision"] for row in options[n]] for n in names]
     fig = go.Figure(go.Heatmap(
         z=z, x=[short_name(c) for c in range(num_classes)], y=names,
-        zmin=0.5, zmax=1.0, colorscale="Reds", text=np.round(z, 2),
+        zmin=0.4, zmax=1.0, colorscale="Reds", text=np.round(z, 2),
         texttemplate="%{text}", colorbar=dict(title="Precision")))
     fig.update_layout(yaxis=dict(autorange="reversed"))
     show(style(fig, 140 + 34 * len(names)))
     st.caption("Darker = the attack is more precise on that class. "
-               "Classes like bird, cat and dog are usually the most exposed.")
+               "Classes like bird, cat and dog are usually the most exposed. "
+               "A precision of 0 means the attack called nothing a member in that class.")
 
     choice = st.selectbox("Look closer at one experiment", names)
     pc = pd.DataFrame(options[choice])

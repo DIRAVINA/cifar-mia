@@ -2,13 +2,14 @@
   "key": "dropout",
   "label": "Dropout 0.5",
   "dropout": 0.5,
+  "l2": 0.0,
   "transform": "none",
   "target_dir": "dropout",
   "num_classes": 10,
   "dataset": "cifar10",
-  "train_acc": 0.9856,
-  "test_acc": 0.5416,
-  "attack_precision": 0.7127409496944053,
-  "attack_recall": 0.9096,
-  "attack_accuracy": 0.7715
+  "train_acc": 0.9874,
+  "test_acc": 0.5498,
+  "attack_precision": 0.7076923076923077,
+  "attack_recall": 0.92,
+  "attack_accuracy": 0.77
 }

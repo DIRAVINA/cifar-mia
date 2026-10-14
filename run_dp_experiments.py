@@ -8,7 +8,7 @@ from src.data import get_device, set_seed, load_cifar, split_target_and_shadow_p
 from src.dp import train_model_dp
 from src.shadow import build_attack_data
 from run_experiments import (make_target_data, split_acc, run_attack,
-                             summarize, show, load_results, save_results)
+                             summarize, show, save_result)
 
 
 def train_shadow_models_dp(X_pool, y_pool, num_classes, epsilon, device,
@@ -46,7 +46,7 @@ def exp_dp(X, y, num_classes, device):
         print(f"\n##### DP-SGD: target epsilon = {eps} #####")
         target, spent = train_model_dp(s["X_target_train"], s["y_target_train"],
                                        num_classes, eps, device,
-                                       seed=config.SEED + 999)
+                                       seed=config.SEED + config.TARGET_SEED_OFFSET)
         print(f"  target trained, epsilon spent = {spent:.2f}")
         td = make_target_data(target, s, device)
         tr, te = split_acc(td)
@@ -68,7 +68,5 @@ if __name__ == "__main__":
     X, y = load_cifar()
     num_classes = len(np.unique(y))
 
-    results = load_results()
-    results["dp_sgd"] = exp_dp(X, y, num_classes, device)
-    save_results(results)
+    save_result("dp_sgd", exp_dp(X, y, num_classes, device))
     print("\nSaved 'dp_sgd' results to results/results.json")

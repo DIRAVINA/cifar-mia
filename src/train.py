@@ -2,41 +2,60 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
 
 import config
 from src.data import get_device, set_seed, load_cifar, split_target_and_shadow_pool
 from src.model import CifarCNN
 
 
+def minibatches(X, y, batch_size, shuffle=True):
+    """
+    Yields (X, y) mini-batches of tensors that already sit on the device.
+    Same as a shuffled DataLoader over a TensorDataset, but it slices whole
+    batches at once instead of fetching and stacking samples one by one,
+    which is far faster for small models.
+    """
+    n = len(X)
+    order = torch.randperm(n, device=X.device) if shuffle else torch.arange(n, device=X.device)
+    for i in range(0, n, batch_size):
+        b = order[i:i + batch_size]
+        yield X[b], y[b]
+
+
 def train_model(model, X, y, epochs, device, lr=config.LEARNING_RATE,
-                batch_size=config.BATCH_SIZE, weight_decay=0.0,
+                batch_size=config.BATCH_SIZE, l2=0.0,
                 X_val=None, y_val=None, verbose=True):
     """
     Trains a model on (X, y) and returns it.
 
-    weight_decay is the L2 regularization strength (lambda in the paper).
-    Keep it 0.0 for a normal (overfitted) model; we use it in the
-    mitigation step later.
+    l2 is the L2 regularization strength, lambda in the paper (Section VIII):
+    the loss becomes  cross-entropy + lambda * sum(theta^2)  over all
+    parameters. Keep it 0.0 for a normal (overfitted) model.
+
+    Note: the penalty is added to the loss on purpose. Adam's own
+    `weight_decay=lambda` adds lambda * theta to the gradient, which equals a
+    penalty of only lambda / 2 * sum(theta^2), i.e. half the paper's lambda.
 
     If X_val / y_val are given, validation accuracy is printed too.
     """
     model.to(device)
     model.train()
 
-    dataset = TensorDataset(torch.from_numpy(X), torch.from_numpy(y))
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    # Data goes to the device once, not batch by batch.
+    X_t, y_t = torch.from_numpy(X).to(device), torch.from_numpy(y).to(device)
 
     loss_fn = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    params = list(model.parameters())
 
     for epoch in range(1, epochs + 1):
         model.train()
         total_loss = 0.0
-        for xb, yb in loader:
-            xb, yb = xb.to(device), yb.to(device)
+        for xb, yb in minibatches(X_t, y_t, batch_size):
             optimizer.zero_grad()
             loss = loss_fn(model(xb), yb)
+            if l2 > 0:
+                loss = loss + l2 * sum(p.pow(2).sum() for p in params)
             loss.backward()
             optimizer.step()
             total_loss += loss.item() * len(xb)

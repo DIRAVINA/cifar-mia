@@ -1,4 +1,5 @@
 # src/shadow.py
+import json
 import os
 import numpy as np
 import torch
@@ -34,8 +35,8 @@ def train_shadow_models(X_pool, y_pool, num_classes,
                         num_shadow=config.NUM_SHADOW,
                         train_size=config.SHADOW_TRAIN_SIZE,
                         epochs=config.SHADOW_EPOCHS,
-                        device=None, seed=config.SEED, weight_decay=0.0,
-                        dropout=0.0):                                  # NEW
+                        device=None, seed=config.SEED, l2=0.0,
+                        dropout=0.0):
     """
     Trains `num_shadow` shadow models. For each shadow i:
       1. randomly pick `train_size` images from the pool as its training set
@@ -46,7 +47,7 @@ def train_shadow_models(X_pool, y_pool, num_classes,
     Different shadows may reuse the same images (allowed by the paper),
     but the pool never contains target-model data.
 
-    weight_decay is the L2 regularization strength (0.0 = none).
+    l2 is the L2 regularization strength, paper lambda (0.0 = none).
     dropout is the dropout probability (0.0 = none). The attacker is assumed
     to know the defense, so shadows are trained with the same settings.
 
@@ -65,9 +66,9 @@ def train_shadow_models(X_pool, y_pool, num_classes,
         X_te, y_te = X_pool[te_idx], y_pool[te_idx]
 
         torch.manual_seed(seed + i)          # different init for each shadow
-        model = CifarCNN(num_classes, dropout=dropout)                 # NEW
+        model = CifarCNN(num_classes, dropout=dropout)
         train_model(model, X_tr, y_tr, epochs=epochs, device=device,
-                    weight_decay=weight_decay, verbose=False)
+                    l2=l2, verbose=False)
 
         tr_acc = accuracy(model, X_tr, y_tr, device)
         te_acc = accuracy(model, X_te, y_te, device)
@@ -85,14 +86,54 @@ def train_shadow_models(X_pool, y_pool, num_classes,
     }
 
 
-def save_attack_data(data, path):
+SHADOW_CACHE = os.path.join(config.RESULTS_DIR, "shadow_attack_data.npz")
+
+
+def cache_settings():
+    """Settings the cached shadow data depends on. A mismatch means it is stale."""
+    return {"dataset": config.DATASET, "seed": config.SEED,
+            "target_train_size": config.TARGET_TRAIN_SIZE,
+            "num_shadow": config.NUM_SHADOW, "train_size": config.SHADOW_TRAIN_SIZE,
+            "epochs": config.SHADOW_EPOCHS, "lr": config.LEARNING_RATE,
+            "batch_size": config.BATCH_SIZE}
+
+
+def save_attack_data(data, path, settings=None):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    np.savez_compressed(path, **data)
+    extra = {"settings": np.array(json.dumps(settings))} if settings else {}
+    np.savez_compressed(path, **data, **extra)
 
 
-def load_attack_data(path):
+def load_attack_data(path, expected_settings=None):
+    """
+    Loads cached attack data. If expected_settings is given and the cache was
+    made with different settings, returns None (the caller should retrain).
+    """
     f = np.load(path)
-    return {k: f[k] for k in f.files}
+    if expected_settings is not None:
+        saved = json.loads(str(f["settings"])) if "settings" in f.files else None
+        if saved != expected_settings:
+            return None
+    return {k: f[k] for k in f.files if k != "settings"}
+
+
+def load_or_train_shadow_data(s, num_classes, device, path=SHADOW_CACHE):
+    """
+    The main shadow data (config.NUM_SHADOW shadows, default settings), shared
+    by src.evaluate, run_experiments, run_analysis and build_demo. Trained once
+    and cached; retrained automatically if config.py changed since.
+    """
+    settings = cache_settings()
+    if os.path.exists(path):
+        data = load_attack_data(path, settings)
+        if data is not None:
+            print("Loaded cached shadow data from", path)
+            return data
+        print("Cached shadow data was made with other settings; retraining.")
+    data = train_shadow_models(s["X_shadow_pool"], s["y_shadow_pool"],
+                               num_classes, device=device)
+    save_attack_data(data, path, settings)
+    return data
 
 
 if __name__ == "__main__":

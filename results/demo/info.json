@@ -1,8 +1,0 @@
-{
-  "num_classes": 10,
-  "dataset": "cifar10",
-  "train_acc": 1.0,
-  "test_acc": 0.5596,
-  "n_members": 5000,
-  "n_nonmembers": 5000
-}

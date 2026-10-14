@@ -13,3 +13,6 @@ __pycache__/
 
 # Editor settings
 .vscode/
+# Temporary files from saving results (scripts running in parallel)
+results/*.lock
+results/*.tmp
